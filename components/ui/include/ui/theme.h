@@ -10,6 +10,7 @@ void theme_init(void);
 
 const lv_font_t *theme_font_body(void);
 const lv_font_t *theme_font_title(void);
+extern const lv_font_t emoji_font_14; /* Noto Emoji 14 px - fallback for Unicode emoji */
 
 static inline lv_color_t theme_hex(long hex) { return lv_color_hex((uint32_t)hex); }
 

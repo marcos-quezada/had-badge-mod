@@ -23,6 +23,10 @@ void theme_init(void)
     if (s_inited) return;
     s_inited = true;
 
+    /* Register emoji fallback so any label using the body font renders
+     * Unicode emoji codepoints from incoming Meshtastic messages. */
+    ((lv_font_t *)&lv_font_montserrat_14)->fallback = &emoji_font_14;
+
     lv_style_init(&st_card);
     lv_style_set_bg_color(&st_card, theme_hex(C_SURFACE));
     lv_style_set_bg_opa(&st_card, LV_OPA_COVER);
