@@ -5,6 +5,7 @@ if(CONFIG_BADGE_FONT_LATIN1)
                         "fonts/lv_font_montserrat_latin1_18.c")
 endif()
 list(APPEND ui_srcs "emoji_font_14.c")
+list(APPEND ui_srcs "emoji.c")
 idf_component_register(
     SRCS ${ui_srcs}
     INCLUDE_DIRS "include"
