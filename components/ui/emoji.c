@@ -1,6 +1,10 @@
 /* See ui/emoji.h. */
 #include "ui/emoji.h"
-#include "lvgl.h"
+#ifdef HOST_TEST
+#  include "emoji_lvgl_stub.h"  /* symbol macros without full LVGL */
+#else
+#  include "lvgl.h"
+#endif
 #include <string.h>
 
 typedef struct {

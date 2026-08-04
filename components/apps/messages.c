@@ -5,6 +5,7 @@
  * handler only copies into a FreeRTOS queue and the app drains it in tick()
  * (which runs in the UI task). */
 #include "apps/app_iface.h"
+#include "ui/emoji.h"
 #include "ui/frame.h"
 #include "ui/layout.h"
 #include "ui/theme.h"
@@ -232,12 +233,15 @@ static void add_bubble(const net_message_t *m)
     lv_obj_set_style_max_width(bubble, CONTENT_W_70, 0);
     lv_label_set_long_mode(bubble, LV_LABEL_LONG_WRAP);
 
+    char text_buf[MSG_TEXT_MAX * 4 + 1];
+    emoji_subst(m->text, text_buf, sizeof text_buf);
+    
     if (m->outgoing) {
-        lv_label_set_text(bubble, m->text);
+        lv_label_set_text(bubble, text_buf);
     } else {
-        char buf[300];
+        char buf[sizeof text_buf + 64];   /* name (23) + "\n" + some headroom */
         const char *who = m->long_name[0] ? m->long_name : m->short_name;
-        snprintf(buf, sizeof buf, "%s\n%s", who[0] ? who : "node", m->text);
+        snprintf(buf, sizeof buf, "%s\n%s", who[0] ? who : "node", text_buf);
         lv_label_set_text(bubble, buf);
     }
 }

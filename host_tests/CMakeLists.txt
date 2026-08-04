@@ -27,6 +27,7 @@ set(PORTABLE
     ${ROOT}/components/core/settings_json.c
     ${ROOT}/components/core/nodedb.c
     ${ROOT}/components/net/portable/dedup.c
+    ${ROOT}/components/ui/emoji.c
     ${ROOT}/components/ui/portable/theme_map.c
     ${ROOT}/components/util/nmea.c
     ${ROOT}/components/util/gps_state.c
@@ -48,7 +49,7 @@ target_include_directories(host_tests PRIVATE
     ${ROOT}/components/ui/include
     ${ROOT}/components/util/include
     ${CMAKE_CURRENT_LIST_DIR})
-target_compile_options(host_tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare)
+target_compile_options(host_tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -DHOST_TEST)
 
 enable_testing()
 add_test(NAME host_tests COMMAND host_tests)
