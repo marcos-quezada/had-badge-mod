@@ -4,6 +4,7 @@
 
 lv_style_t st_card, st_card_sel, st_input, st_bubble_me, st_bubble_them, st_title, st_hint;
 static bool s_inited;
+static lv_font_t s_body_font;   /* mutable RAM copy of the body font */
 
 #if CONFIG_BADGE_FONT_LATIN1
 /* Montserrat rebuilt with the Latin-1 supplement (0xA0-0xFF) so accented
@@ -11,10 +12,11 @@ static bool s_inited;
  * FontAwesome LV_SYMBOL glyphs are merged in, same as the built-ins. */
 LV_FONT_DECLARE(lv_font_montserrat_latin1_14)
 LV_FONT_DECLARE(lv_font_montserrat_latin1_18)
-const lv_font_t *theme_font_body(void)  { return &lv_font_montserrat_latin1_14; }
+#endif
+const lv_font_t *theme_font_body(void)  { return &s_body_font; }
+#if CONFIG_BADGE_FONT_LATIN1
 const lv_font_t *theme_font_title(void) { return &lv_font_montserrat_latin1_18; }
 #else
-const lv_font_t *theme_font_body(void)  { return &lv_font_montserrat_14; }
 const lv_font_t *theme_font_title(void) { return &lv_font_montserrat_18; }
 #endif
 
@@ -25,7 +27,12 @@ void theme_init(void)
 
     /* Register emoji fallback so any label using the body font renders
      * Unicode emoji codepoints from incoming Meshtastic messages. */
-    ((lv_font_t *)&lv_font_montserrat_14)->fallback = &emoji_font_14;
+#if CONFIG_BADGE_FONT_LATIN1
+    s_body_font          = lv_font_montserrat_latin1_14;  /* copy struct to RAM */
+#else
+    s_body_font          = lv_font_montserrat_14;          /* copy struct to RAM */
+#endif
+    s_body_font.fallback = &emoji_font_14;          /* safe: writing to RAM */
 
     lv_style_init(&st_card);
     lv_style_set_bg_color(&st_card, theme_hex(C_SURFACE));

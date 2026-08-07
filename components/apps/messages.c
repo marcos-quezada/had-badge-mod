@@ -267,7 +267,10 @@ static void show_toast(const char *line)
     lv_obj_t *l = lv_label_create(t);
     lv_obj_set_width(l, LV_PCT(100));
     lv_label_set_long_mode(l, LV_LABEL_LONG_DOT);
-    lv_label_set_text(l, line);
+    lv_obj_set_style_text_font(l, theme_font_body(), 0);
+    char toast_buf[MSG_TEXT_MAX + 1];
+    emoji_subst(line, toast_buf, sizeof toast_buf);
+    lv_label_set_text(l, toast_buf);
     lv_obj_delete_delayed(t, 3500);
 }
 

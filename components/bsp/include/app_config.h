@@ -15,6 +15,7 @@
 /* Message history kept in RAM for the chat app. */
 #define MSG_HISTORY_MAX       64
 #define MSG_TEXT_MAX          234
+#define APP_SLOTS_MAX         20    /* built-in + user app slots */
 
 /* Backlight policy (seconds). 0 disables a stage. */
 #define BL_DIM_TIMEOUT_S      60

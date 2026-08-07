@@ -28,6 +28,7 @@ SUITE_DECL(run_radar);
 SUITE_DECL(run_compass);
 SUITE_DECL(run_map);
 SUITE_DECL(run_theme_layout);
+SUITE_DECL(run_emoji);
 
 #define RUN(f) do { if (f) (f)(); } while (0)
 
@@ -51,6 +52,7 @@ int main(void)
     RUN(run_compass);
     RUN(run_map);
     RUN(run_theme_layout);
+    RUN(run_emoji);
 
     printf("\n%d checks, %d failure%s\n", ht_checks, ht_fails, ht_fails == 1 ? "" : "s");
     return ht_fails ? 1 : 0;

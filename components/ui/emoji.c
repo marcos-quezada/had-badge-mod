@@ -1,10 +1,5 @@
 /* See ui/emoji.h. */
 #include "ui/emoji.h"
-#ifdef HOST_TEST
-#  include "emoji_lvgl_stub.h"  /* symbol macros without full LVGL */
-#else
-#  include "lvgl.h"
-#endif
 #include <string.h>
 
 typedef struct {
@@ -32,20 +27,18 @@ static const emoji_entry_t s_table[] = {
     { "star",       "\xE2\xAD\x90"      },
     { "fire",       "\xF0\x9F\x94\xA5"  },
     { "tada",       "\xF0\x9F\x8E\x89"  },
-
-    /* LVGL built-in symbols */
-    { "bell",       LV_SYMBOL_BELL      },
-    { "ok",         LV_SYMBOL_OK        },
-    { "x",          LV_SYMBOL_CLOSE     },
-    { "warn",       LV_SYMBOL_WARNING   },
-    { "mail",       LV_SYMBOL_ENVELOPE  },
-    { "call",       LV_SYMBOL_CALL      },
-    { "wifi",       LV_SYMBOL_WIFI      },
-    { "audio",      LV_SYMBOL_AUDIO     },
-    { "eye",        LV_SYMBOL_EYE_OPEN  },
-    { "edit",       LV_SYMBOL_EDIT      },
-    { "trash",      LV_SYMBOL_TRASH     },
-    { "bt",         LV_SYMBOL_BLUETOOTH }
+    { "bell",       "\xF0\x9F\x94\x94"  },
+    { "ok",         "\xE2\x9C\x85"      },
+    { "x",          "\xE2\x9D\x8C"      },
+    { "warn",       "\xE2\x9A\xA0"      },
+    { "mail",       "\xF0\x9F\x93\xA7"  },
+    { "call",       "\xF0\x9F\x93\x9E"  },
+    { "wifi",       "\xF0\x9F\x93\xB6"  },
+    { "audio",      "\xF0\x9F\x94\x8A"  },
+    { "eye",        "\xF0\x9F\x91\x81"  },
+    { "edit",       "\xE2\x9C\x8F"      },
+    { "trash",      "\xF0\x9F\x97\x91"  },
+    { "pin",        "\xF0\x9F\x93\x8D"  }
 };
 
 #define TABLE_N ((int)(sizeof s_table / sizeof s_table[0]))
@@ -89,14 +82,23 @@ static int try_shortcode(const char *src, char *dst, size_t dst_sz,
     return 1;
 }
 
-/* Returns 1 if s points to a UTF-8 skin tone modifier (U+1F3FB-U+1F3FF). */
-static int is_skin_tone(const char *s)
+/* Returns the number of bytes to skip if the sequence at s is an invisible
+ * combining character that should be stripped. Returns 0 to keep the byte.
+ *   - Skin tone modifiers  U+1F3FB-U+1F3FF   (F0 9F 8F bb-BF, 4 bytes)
+ *   - Variation slectors   U+FE0E-U+FE0F     (EF B8 8E-8F,    3 bytes)
+ *   - Zero-width joiner    U+200D            (E2 80 8D,       3 bytes) */
+static int strip_bytes(const char *s)
 {
-    return (unsigned char)s[0] == 0xF0 &&
-           (unsigned char)s[1] == 0x9F &&
-           (unsigned char)s[2] == 0x8F &&
-           (unsigned char)s[3] >= 0xBB &&
-           (unsigned char)s[3] <= 0xBF;
+    unsigned char b0 = (unsigned char)s[0];
+    unsigned char b1 = (unsigned char)s[1];
+    unsigned char b2 = (unsigned char)s[2];
+
+    if (b0 == 0xF0 && b1 == 0x9F && b2 == 0x8F &&
+        (unsigned char)s[3] >= 0xBB && (unsigned char)s[3] <= 0xBF) return 4;
+    if (b0 == 0xEF && b1 == 0xB8 && (b2 == 0x8E || b2 == 0x8F)) return 3;
+    if (b0 == 0xE2 && b1 == 0x80 && b2 == 0x8D) return 3;
+    
+    return 0;
 }
 
 const char *emoji_subst(const char *src, char *dst, size_t dst_sz)
@@ -106,8 +108,9 @@ const char *emoji_subst(const char *src, char *dst, size_t dst_sz)
     size_t sp = 0, dp = 0;
 
     while (src[sp] != '\0') {
-        if (is_skin_tone(src + sp)) { sp += 4; continue; }
-
+        int skip = strip_bytes(src + sp);
+        if (skip) {sp += skip; continue;}
+        
         /* Try shortcode substitution. */
         if (src[sp] == ':') {
             size_t src_used, dst_used;

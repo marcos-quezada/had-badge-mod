@@ -49,7 +49,7 @@ target_include_directories(host_tests PRIVATE
     ${ROOT}/components/ui/include
     ${ROOT}/components/util/include
     ${CMAKE_CURRENT_LIST_DIR})
-target_compile_options(host_tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -DHOST_TEST)
+target_compile_options(host_tests PRIVATE -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare)
 
 enable_testing()
 add_test(NAME host_tests COMMAND host_tests)

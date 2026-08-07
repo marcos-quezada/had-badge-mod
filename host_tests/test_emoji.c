@@ -34,6 +34,11 @@ void run_emoji(void)
     emoji_subst("\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD", buf, sizeof buf);
     CHECK_STR(buf, "\xF0\x9F\x91\x8D");
 
+    SUITE("emoji/variation-selector-stripped");
+    /* heart + variation selector-16 (U+FE0F) */
+    emoji_subst("\xE2\x9D\xA4\xEF\xB8\x8F", buf, sizeof buf);
+    CHECK_STR(buf, "\xE2\x9D\xA4");
+
     SUITE("emoji/table-count");
     CHECK(emoji_subst_count() >= 30);
 
