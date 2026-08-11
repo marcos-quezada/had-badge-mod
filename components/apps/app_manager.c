@@ -1,4 +1,5 @@
 /* See apps/app_manager.h. */
+#include "app_config.h"
 #include "apps/app_manager.h"
 #include "apps/app_iface.h"
 #include "apps/launcher.h"
@@ -12,7 +13,7 @@
 
 static const char *TAG = "apps";
 
-static const app_def_t *s_apps[12];
+static const app_def_t *s_apps[APP_SLOTS_MAX];
 static int s_napps;
 static lv_group_t *s_group;
 static lv_indev_t *s_indev;

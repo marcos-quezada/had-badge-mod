@@ -14,6 +14,10 @@ extern const lv_font_t emoji_font_14; /* Noto Emoji 14 px - fallback for Unicode
 
 static inline lv_color_t theme_hex(long hex) { return lv_color_hex((uint32_t)hex); }
 
+/* Returns a color blended between C_ACCENT (intensity=255) and C_SURFACE
+ * (instensity=0). Use for depth effects and multi-tone animations. */
+lv_color_t theme_tint(int intensity);
+
 /* A fresh dark screen object (not loaded). */
 lv_obj_t *theme_screen_create(void);
 

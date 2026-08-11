@@ -20,6 +20,14 @@ const lv_font_t *theme_font_title(void) { return &lv_font_montserrat_latin1_18; 
 const lv_font_t *theme_font_title(void) { return &lv_font_montserrat_18; }
 #endif
 
+lv_color_t theme_tint(int intensity)
+{
+    if (intensity <= 0)   return theme_hex(C_SURFACE);
+    if (intensity >= 255) return theme_hex(C_ACCENT);
+    return lv_color_mix(theme_hex(C_ACCENT), theme_hex(C_SURFACE),
+                        (uint8_t)intensity);
+}
+
 void theme_init(void)
 {
     if (s_inited) return;

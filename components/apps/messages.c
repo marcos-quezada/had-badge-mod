@@ -341,7 +341,9 @@ static void send_current(void)
 {
     const char *txt = lv_textarea_get_text(s_input);
     if (!txt || !txt[0]) return;
-    net_send_text_to(s_target, txt);   /* echo arrives via EV_MESSAGE_SENT */
+    char wire_buf[MSG_TEXT_MAX + 1];
+    emoji_subst(txt, wire_buf, sizeof wire_buf);
+    net_send_text_to(s_target, wire_buf);   /* echo arrives via EV_MESSAGE_SENT */
     lv_textarea_set_text(s_input, "");
 }
 
