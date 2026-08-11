@@ -4,4 +4,4 @@ idf_component_register(
          "tracker.c" "radar.c" "map.c" "compass_app.c"
     INCLUDE_DIRS "include"
     REQUIRES "ui" "core" "net" "mesh" "services" "drivers" "util" "lvgl" "bsp" "ble"
-             "esp_timer" "nvs_flash" "esp_app_format")
+             "esp_timer" "nvs_flash" "esp_app_format" "esp_driver_tsens" "spi_flash")

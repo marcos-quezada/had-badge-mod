@@ -5,6 +5,8 @@
  * on any channel, before the channel/decrypt filter. It is the key field when
  * messages are not getting through: if it climbs, the radio hears traffic. */
 #include "apps/app_iface.h"
+#include "driver/temperature_sensor.h"
+#include "esp_flash.h"
 #include "ui/frame.h"
 #include "ui/theme.h"
 #include "ui/colors.h"
@@ -24,6 +26,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
@@ -35,9 +38,37 @@ enum {
     R_WIFI, R_WIFI_IP,
     R_BLE,
     R_BATT, R_SYS,
+    /* System page */
+    R_CPU, R_TEMP, R_FLASH, R_PSRAM, R_HEAP, R_UPTIME,
     R_COUNT
 };
+
+static int s_page;    /* 0 = Mesh, 1 = System, 2 = Memory, 3 = Radio  */
+static temperature_sensor_handle_t s_tsens;
+#define PAGE_COUNT 4
 static lv_obj_t *s_val[R_COUNT];
+static frame_t f;
+
+static void build_mesh_page(void);
+static void build_system_page(void);
+static void build_memory_page(void);
+static void build_radio_page(void);
+
+static void show_page(void)
+{
+    memset(s_val, 0, sizeof s_val);
+    lv_obj_clean(f.body);
+    switch (s_page) {
+    case 0: build_mesh_page(); break;
+    case 1: build_system_page(); break;
+    case 2: build_memory_page(); break;
+    case 3: build_radio_page(); break;
+    }
+    /* Update page indicator in menubar */
+    char label[16];
+    snprintf(label, sizeof label, "%d/%d", s_page + 1, PAGE_COUNT);
+    menubar_set_cell(2, label);   /* F3 cell shows current page */
+}
 
 static void make_header(lv_obj_t *parent, const char *caps)
 {
@@ -70,14 +101,8 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *caption)
     return val;
 }
 
-static void build(lv_obj_t **screen, lv_group_t *group)
+static void build_mesh_page(void)
 {
-    static frame_t f;
-    frame_create(&f, "Diagnostics");
-    lv_obj_set_flex_flow(f.body, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(f.body, 1, 0);
-    ui_scroll_focusable(f.body, group);
-
     make_header(f.body, "LORA MESH");
     s_val[R_NODE]  = make_row(f.body, "Node");
     s_val[R_RADIO] = make_row(f.body, "Radio");
@@ -110,253 +135,336 @@ static void build(lv_obj_t **screen, lv_group_t *group)
     make_header(f.body, "SYSTEM");
     s_val[R_BATT] = make_row(f.body, "Battery");
     s_val[R_SYS]  = make_row(f.body, "Up/Heap");
+}
+
+static void build_system_page(void)
+{
+    if (!s_tsens) {
+        temperature_sensor_config_t cfg = TEMPERATURE_SENSOR_CONFIG_DEFAULT(10, 50);
+        temperature_sensor_install(&cfg, &s_tsens);
+        temperature_sensor_enable(s_tsens);
+    }
+    make_header(f.body, "SYSTEM");
+    s_val[R_CPU]    = make_row(f.body, "CPU");
+    s_val[R_TEMP]   = make_row(f.body, "Temp");
+    s_val[R_FLASH]  = make_row(f.body, "Flash");
+    s_val[R_PSRAM]  = make_row(f.body, "PSRAM");
+    s_val[R_HEAP]   = make_row(f.body, "Heap");
+    s_val[R_UPTIME] = make_row(f.body, "Uptime");
+}
+
+static void build_memory_page(void) { /* task 4.4 */ }
+static void build_radio_page(void)  { /* task 4.5 */ }
+
+static void build(lv_obj_t **screen, lv_group_t *group)
+{
+    frame_create(&f, "Diagnostics");
+    lv_obj_set_flex_flow(f.body, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(f.body, 1, 0);
+    ui_scroll_focusable(f.body, group);
 
     *screen = f.screen;
-    menubar_set_labels("Buzz", "LED", "MagST", "", "");
+    show_page();
+    menubar_set_labels("Prev", "Next", "Buzz", "LED", "");
+}
+
+static void close_diag(void)
+{
+    if (s_tsens) {
+        temperature_sensor_disable(s_tsens);
+        temperature_sensor_uninstall(s_tsens);
+        s_tsens = NULL;
+    }
 }
 
 static void tick(void)
 {
     char b[96], id[12];
 
-    /* --- LoRa mesh --- */
-    net_diag_t d;
-    net_diag(&d);
-    net_node_id_str(d.node, id);
-    lv_label_set_text(s_val[R_NODE], id);
-    snprintf(b, sizeof b, "%s %.3fMHz SF%d", d.region, d.freq_mhz, d.sf);
-    lv_label_set_text(s_val[R_RADIO], b);
-    snprintf(b, sizeof b, "%s  sync 0x%02X", d.channel, d.sync_word);
-    lv_label_set_text(s_val[R_CHAN], b);
-    snprintf(b, sizeof b, "%lu / %lu", (unsigned long)d.rx_count, (unsigned long)d.tx_count);
-    lv_label_set_text(s_val[R_RXTX], b);
-    snprintf(b, sizeof b, "%lu frames (any ch)", (unsigned long)d.rx_raw);
-    lv_label_set_text(s_val[R_HEARD], b);
-    snprintf(b, sizeof b, "RSSI %.0f  SNR %.1f", (double)d.last_rssi, (double)d.last_snr);
-    lv_label_set_text(s_val[R_SIG], b);
-    snprintf(b, sizeof b, "%d", d.peers);
-    lv_label_set_text(s_val[R_PEERS], b);
+    if (s_page == 0) {
+        /* --- LoRa mesh --- */
+        net_diag_t d;
+        net_diag(&d);
+        net_node_id_str(d.node, id);
+        lv_label_set_text(s_val[R_NODE], id);
+        snprintf(b, sizeof b, "%s %.3fMHz SF%d", d.region, d.freq_mhz, d.sf);
+        lv_label_set_text(s_val[R_RADIO], b);
+        snprintf(b, sizeof b, "%s  sync 0x%02X", d.channel, d.sync_word);
+        lv_label_set_text(s_val[R_CHAN], b);
+        snprintf(b, sizeof b, "%lu / %lu", (unsigned long)d.rx_count, (unsigned long)d.tx_count);
+        lv_label_set_text(s_val[R_RXTX], b);
+        snprintf(b, sizeof b, "%lu frames (any ch)", (unsigned long)d.rx_raw);
+        lv_label_set_text(s_val[R_HEARD], b);
+        snprintf(b, sizeof b, "RSSI %.0f  SNR %.1f", (double)d.last_rssi, (double)d.last_snr);
+        lv_label_set_text(s_val[R_SIG], b);
+        snprintf(b, sizeof b, "%d", d.peers);
+        lv_label_set_text(s_val[R_PEERS], b);
 
-    /* --- GPS --- */
-    gps_status_t gst;
-    gps_get_status(&gst);
-    gps_state_t gstate = gps_state_from(gst.running, gst.ms_since_data, gst.ms_since_fix, gst.fix.valid);
-    switch (gstate) {
-    case GPS_STATE_OFF:
-        lv_label_set_text(s_val[R_GPS], "off");
-        lv_label_set_text(s_val[R_GPS_POS], "--");
-        break;
-    case GPS_STATE_NO_DATA:
-        lv_label_set_text(s_val[R_GPS], "no data");
-        lv_label_set_text(s_val[R_GPS_POS], "--");
-        break;
-    case GPS_STATE_SEARCHING:
-        lv_label_set_text(s_val[R_GPS], "searching");
-        lv_label_set_text(s_val[R_GPS_POS], "--");
-        break;
-    case GPS_STATE_FIX:
-        snprintf(b, sizeof b, "fix, %d/%d sats  HDOP %.1f",
-                 gst.fix.sats, gst.fix.sats_in_view, gst.fix.hdop);
-        lv_label_set_text(s_val[R_GPS], b);
-        snprintf(b, sizeof b, "%.5f, %.5f", gst.fix.lat, gst.fix.lon);
-        lv_label_set_text(s_val[R_GPS_POS], b);
-        break;
-    }
-    if (gstate == GPS_STATE_OFF) {
-        lv_label_set_text(s_val[R_GPS_DATA], "--");
-    } else if (gst.ms_since_data == UINT32_MAX) {
-        snprintf(b, sizeof b, "%lu sent, none yet", (unsigned long)gst.sentences);
-        lv_label_set_text(s_val[R_GPS_DATA], b);
-    } else {
-        snprintf(b, sizeof b, "%lu sent, %lus", (unsigned long)gst.sentences,
-                 (unsigned long)(gst.ms_since_data / 1000));
-        lv_label_set_text(s_val[R_GPS_DATA], b);
-    }
+        /* --- GPS --- */
+        gps_status_t gst;
+        gps_get_status(&gst);
+        gps_state_t gstate = gps_state_from(gst.running, gst.ms_since_data, gst.ms_since_fix, gst.fix.valid);
+        switch (gstate) {
+        case GPS_STATE_OFF:
+            lv_label_set_text(s_val[R_GPS], "off");
+            lv_label_set_text(s_val[R_GPS_POS], "--");
+            break;
+        case GPS_STATE_NO_DATA:
+            lv_label_set_text(s_val[R_GPS], "no data");
+            lv_label_set_text(s_val[R_GPS_POS], "--");
+            break;
+        case GPS_STATE_SEARCHING:
+            lv_label_set_text(s_val[R_GPS], "searching");
+            lv_label_set_text(s_val[R_GPS_POS], "--");
+            break;
+        case GPS_STATE_FIX:
+            snprintf(b, sizeof b, "fix, %d/%d sats  HDOP %.1f",
+                     gst.fix.sats, gst.fix.sats_in_view, gst.fix.hdop);
+            lv_label_set_text(s_val[R_GPS], b);
+            snprintf(b, sizeof b, "%.5f, %.5f", gst.fix.lat, gst.fix.lon);
+            lv_label_set_text(s_val[R_GPS_POS], b);
+            break;
+        }
+        if (gstate == GPS_STATE_OFF) {
+            lv_label_set_text(s_val[R_GPS_DATA], "--");
+        } else if (gst.ms_since_data == UINT32_MAX) {
+            snprintf(b, sizeof b, "%lu sent, none yet", (unsigned long)gst.sentences);
+            lv_label_set_text(s_val[R_GPS_DATA], b);
+        } else {
+            snprintf(b, sizeof b, "%lu sent, %lus", (unsigned long)gst.sentences,
+                     (unsigned long)(gst.ms_since_data / 1000));
+            lv_label_set_text(s_val[R_GPS_DATA], b);
+        }
 
-    /* --- Compass --- */
-    compass_status_t cst;
-    compass_get_status(&cst);
-    /* One state, published by the service, so this page and the Compass app cannot
-     * disagree about what is wrong. */
-    compass_state_t cstate = cst.state;
-    switch (cstate) {
-    case COMPASS_STATE_OFF:
-        /* Only two causes reach here: the setting is off, or it is on and nothing
-         * answered at boot. A silent magnetometer die still leaves the sampling
-         * task running, so it reports as "no magnetometer" below, not here. */
-        lv_label_set_text(s_val[R_CMP], cst.enabled ? "no IMU on SAO" : "disabled");
-        lv_label_set_text(s_val[R_CMP_HDG], "--");
-        break;
-    case COMPASS_STATE_NO_DATA:
-        /* A missing AK09916 also lands here, because the accelerometer half
-         * answers and only the fused sample never appears -- name the die
-         * instead of leaving the user to suspect the whole part. */
-        lv_label_set_text(s_val[R_CMP], cst.mag_present ? "no data" : "no magnetometer");
-        lv_label_set_text(s_val[R_CMP_HDG], "--");
-        break;
-    case COMPASS_STATE_UNCAL:
-        if (cst.cal_active) {
-            snprintf(b, sizeof b, "calibrating, %lu%s", (unsigned long)cst.cal_samples,
-                     cst.cal_ready ? " (ready)" : "");
+        /* --- Compass --- */
+        compass_status_t cst;
+        compass_get_status(&cst);
+        /* One state, published by the service, so this page and the Compass app cannot
+         * disagree about what is wrong. */
+        compass_state_t cstate = cst.state;
+        switch (cstate) {
+        case COMPASS_STATE_OFF:
+            /* Only two causes reach here: the setting is off, or it is on and nothing
+             * answered at boot. A silent magnetometer die still leaves the sampling
+             * task running, so it reports as "no magnetometer" below, not here. */
+            lv_label_set_text(s_val[R_CMP], cst.enabled ? "no IMU on SAO" : "disabled");
+            lv_label_set_text(s_val[R_CMP_HDG], "--");
+            break;
+        case COMPASS_STATE_NO_DATA:
+            /* A missing AK09916 also lands here, because the accelerometer half
+             * answers and only the fused sample never appears -- name the die
+             * instead of leaving the user to suspect the whole part. */
+            lv_label_set_text(s_val[R_CMP], cst.mag_present ? "no data" : "no magnetometer");
+            lv_label_set_text(s_val[R_CMP_HDG], "--");
+            break;
+        case COMPASS_STATE_UNCAL:
+            if (cst.cal_active) {
+                snprintf(b, sizeof b, "calibrating, %lu%s", (unsigned long)cst.cal_samples,
+                         cst.cal_ready ? " (ready)" : "");
+                lv_label_set_text(s_val[R_CMP], b);
+            } else {
+                /* A stored calibration that mag_cal_use is ignoring reaches here too,
+                 * and "uncalibrated" would send that user off to sweep again. */
+                lv_label_set_text(s_val[R_CMP], cst.cal_stored && !cst.cal_in_use
+                                                ? "cal saved, unused" : "uncalibrated");
+            }
+            lv_label_set_text(s_val[R_CMP_HDG], "--");   /* nothing is published yet */
+            break;
+        case COMPASS_STATE_BAD_FIELD:
+            /* The samples arrive and are not a magnetic field. Print the magnitude,
+             * because that number is the whole diagnosis: the earth's field is 25 to
+             * 65 uT anywhere, so hundreds or thousands means the die is dead or
+             * counterfeit, and no amount of calibrating will change it. */
+            snprintf(b, sizeof b, "bad field %.0f uT", cst.field_ut);
             lv_label_set_text(s_val[R_CMP], b);
-        } else {
-            /* A stored calibration that mag_cal_use is ignoring reaches here too,
-             * and "uncalibrated" would send that user off to sweep again. */
-            lv_label_set_text(s_val[R_CMP], cst.cal_stored && !cst.cal_in_use
-                                            ? "cal saved, unused" : "uncalibrated");
+            lv_label_set_text(s_val[R_CMP_HDG], "--");
+            break;
+        case COMPASS_STATE_OK:
+            lv_label_set_text(s_val[R_CMP], "ok");
+            /* Magnetic and declination next to the true heading: a heading that is
+             * off by a constant is a wrong declination, and only this row shows it. */
+            snprintf(b, sizeof b, "%.0f true  mag %.0f  dec %+.1f",
+                     cst.reading.heading_deg, cst.reading.magnetic_deg, cst.declination_deg);
+            lv_label_set_text(s_val[R_CMP_HDG], b);
+            break;
         }
-        lv_label_set_text(s_val[R_CMP_HDG], "--");   /* nothing is published yet */
-        break;
-    case COMPASS_STATE_BAD_FIELD:
-        /* The samples arrive and are not a magnetic field. Print the magnitude,
-         * because that number is the whole diagnosis: the earth's field is 25 to
-         * 65 uT anywhere, so hundreds or thousands means the die is dead or
-         * counterfeit, and no amount of calibrating will change it. */
-        snprintf(b, sizeof b, "bad field %.0f uT", cst.field_ut);
-        lv_label_set_text(s_val[R_CMP], b);
-        lv_label_set_text(s_val[R_CMP_HDG], "--");
-        break;
-    case COMPASS_STATE_OK:
-        lv_label_set_text(s_val[R_CMP], "ok");
-        /* Magnetic and declination next to the true heading: a heading that is
-         * off by a constant is a wrong declination, and only this row shows it. */
-        snprintf(b, sizeof b, "%.0f true  mag %.0f  dec %+.1f",
-                 cst.reading.heading_deg, cst.reading.magnetic_deg, cst.declination_deg);
-        lv_label_set_text(s_val[R_CMP_HDG], b);
-        break;
-    }
-    /* Roll/pitch need the accelerometer only and carry their own freshness, so
-     * they must not hang off the fused state: with a dead magnetometer this row is
-     * the one that proves the other die is alive. */
-    if (cst.ms_since_tilt < COMPASS_NO_DATA_MS) {   /* UINT32_MAX = never, so it fails too */
-        snprintf(b, sizeof b, "roll %.0f  pitch %.0f",
-                 cst.reading.roll_deg, cst.reading.pitch_deg);
-        lv_label_set_text(s_val[R_CMP_TILT], b);
-    } else {
-        lv_label_set_text(s_val[R_CMP_TILT], "--");
-    }
-    /* Transport counters beside the fused ones, GPS-row style. The error count is
-     * the driver's, not the service's: only the driver sees a mag-only I2C failure
-     * (imu_read still returns a good accelerometer sample), and a valid WHO_AM_I
-     * with reads and errors both climbing while smp stays 0 is a magnetometer die
-     * that is not soldered down. */
-    if (cstate == COMPASS_STATE_OFF && !cst.enabled) {
-        lv_label_set_text(s_val[R_CMP_DATA], "--");
-    } else if (cstate == COMPASS_STATE_OFF) {
-        /* Enabled but bring-up failed: the raw WHO_AM_I separates an empty bus
-         * (00) from something answering that is not an ICM-20948. */
-        snprintf(b, sizeof b, "id %02X, no reads", cst.imu_whoami);
-        lv_label_set_text(s_val[R_CMP_DATA], b);
-    } else if (cst.ms_since_sample == UINT32_MAX) {
-        snprintf(b, sizeof b, "id %02X  %lu rd, %lu e  %lu smp, %lu bad, none yet",
-                 cst.imu_whoami, (unsigned long)cst.imu_reads,
-                 (unsigned long)cst.imu_errors, (unsigned long)cst.samples,
-                 (unsigned long)cst.implausible);
-        lv_label_set_text(s_val[R_CMP_DATA], b);
-    } else {
-        snprintf(b, sizeof b, "id %02X  %lu rd, %lu e  %lu smp, %lus",
-                 cst.imu_whoami, (unsigned long)cst.imu_reads,
-                 (unsigned long)cst.imu_errors, (unsigned long)cst.samples,
-                 (unsigned long)(cst.ms_since_sample / 1000));
-        lv_label_set_text(s_val[R_CMP_DATA], b);
-    }
-
-    /* Which part is measuring the field, and its own counters. Without this row the
-     * Data row above reads as though it described the magnetometer, when on a badge
-     * using a separate part it describes the accelerometer's transport only. */
-    if (cst.mag_source == MAG_SOURCE_BNO055) {
-        bno055_status_t bn;
-        bno055_get_status(&bn);
-        if (!bn.present) {
-            lv_label_set_text(s_val[R_CMP_SRC], "BNO055: none found");
+        /* Roll/pitch need the accelerometer only and carry their own freshness, so
+         * they must not hang off the fused state: with a dead magnetometer this row is
+         * the one that proves the other die is alive. */
+        if (cst.ms_since_tilt < COMPASS_NO_DATA_MS) {   /* UINT32_MAX = never, so it fails too */
+            snprintf(b, sizeof b, "roll %.0f  pitch %.0f",
+                     cst.reading.roll_deg, cst.reading.pitch_deg);
+            lv_label_set_text(s_val[R_CMP_TILT], b);
         } else {
-            /* The four calibration figures are the point of this row. A BNO055
-             * reports a confident heading from power-up, and mag below 2 is why a
-             * part that is plainly working still publishes nothing. sys_err is the
-             * part reporting a fault about itself, so it is shown when non-zero
-             * rather than left for the log. */
-            snprintf(b, sizeof b, "BNO055 %s  cal s%u g%u a%u m%u%s",
-                     bn.ext_crystal ? "xtal" : "int-osc",
-                     bn.calib.sys, bn.calib.gyro, bn.calib.accel, bn.calib.mag,
-                     bn.sys_err ? "  ERR" : "");
-            lv_label_set_text(s_val[R_CMP_SRC], b);
-            lv_obj_set_style_text_color(s_val[R_CMP_SRC],
-                                        theme_hex(bn.calib.mag >= 2 && !bn.sys_err
-                                                  ? C_OK : C_WARN), 0);
+            lv_label_set_text(s_val[R_CMP_TILT], "--");
         }
-    } else if (cst.mag_source == MAG_SOURCE_QMC5883L) {
-        qmc5883l_status_t q;
-        qmc5883l_get_status(&q);
-        if (!q.present) {
-            lv_label_set_text(s_val[R_CMP_SRC], "QMC5883L: none found");
+        /* Transport counters beside the fused ones, GPS-row style. The error count is
+         * the driver's, not the service's: only the driver sees a mag-only I2C failure
+         * (imu_read still returns a good accelerometer sample), and a valid WHO_AM_I
+         * with reads and errors both climbing while smp stays 0 is a magnetometer die
+         * that is not soldered down. */
+        if (cstate == COMPASS_STATE_OFF && !cst.enabled) {
+            lv_label_set_text(s_val[R_CMP_DATA], "--");
+        } else if (cstate == COMPASS_STATE_OFF) {
+            /* Enabled but bring-up failed: the raw WHO_AM_I separates an empty bus
+             * (00) from something answering that is not an ICM-20948. */
+            snprintf(b, sizeof b, "id %02X, no reads", cst.imu_whoami);
+            lv_label_set_text(s_val[R_CMP_DATA], b);
+        } else if (cst.ms_since_sample == UINT32_MAX) {
+            snprintf(b, sizeof b, "id %02X  %lu rd, %lu e  %lu smp, %lu bad, none yet",
+                     cst.imu_whoami, (unsigned long)cst.imu_reads,
+                     (unsigned long)cst.imu_errors, (unsigned long)cst.samples,
+                     (unsigned long)cst.implausible);
+            lv_label_set_text(s_val[R_CMP_DATA], b);
         } else {
-            /* ovl is the one to watch on this part: it means the field went off the
-             * top of the selected range, so the counts are clipped rather than
-             * merely noisy, and the range setting is too small. */
-            snprintf(b, sizeof b, "QMC5883L  %lu rd, %lu e, %lu ovl",
-                     (unsigned long)q.reads, (unsigned long)q.errors,
-                     (unsigned long)q.overflows);
-            lv_label_set_text(s_val[R_CMP_SRC], b);
+            snprintf(b, sizeof b, "id %02X  %lu rd, %lu e  %lu smp, %lus",
+                     cst.imu_whoami, (unsigned long)cst.imu_reads,
+                     (unsigned long)cst.imu_errors, (unsigned long)cst.samples,
+                     (unsigned long)(cst.ms_since_sample / 1000));
+            lv_label_set_text(s_val[R_CMP_DATA], b);
         }
-    } else if (cst.state == COMPASS_STATE_OFF && !cst.enabled) {
-        lv_label_set_text(s_val[R_CMP_SRC], "--");
-    } else {
-        lv_label_set_text(s_val[R_CMP_SRC], "AK09916 (in ICM-20948)");
-    }
 
-    /* The self-test energises a coil on the AK09916's own die, so the datasheet
-     * fixes the windows. It reads the coil plus the ambient field, so it does not
-     * isolate the part from its surroundings, but it does separate the analogue
-     * front end from the digital path every other row exercises. Blank until F3 has
-     * been pressed, because a verdict left over from a different module would be
-     * worse than none, and not offered at all for a part with no self-test coil. */
-    if (cst.mag_source != MAG_SOURCE_IMU) {
-        /* A QMC5883L has no self-test coil, and a BNO055 calibrates itself
-         * continuously and reports that in the row above instead. */
-        lv_label_set_text(s_val[R_CMP_ST], "n/a for this part");
-    } else if (!cst.mag_present) {
-        lv_label_set_text(s_val[R_CMP_ST], "--");
-    } else if (!cst.selftest_done) {
-        lv_label_set_text(s_val[R_CMP_ST], "press F3");
-    } else if (!cst.selftest.ran) {
-        lv_label_set_text(s_val[R_CMP_ST], "did not run (I2C)");
-    } else {
-        /* The counts are shown either way: a FAIL that is wildly out means a dead
-         * die, and one just outside the window means a marginal part. */
-        snprintf(b, sizeof b, "%s  %d/%d  %d %d %d",
-                 cst.selftest.pass ? "PASS" : "FAIL",
-                 cst.selftest.passes, cst.selftest.runs,
-                 cst.selftest.x, cst.selftest.y, cst.selftest.z);
-        lv_label_set_text(s_val[R_CMP_ST], b);
-        lv_obj_set_style_text_color(s_val[R_CMP_ST],
-                                    theme_hex(cst.selftest.pass ? C_OK : C_CRIT), 0);
-    }
+        /* Which part is measuring the field, and its own counters. Without this row the
+         * Data row above reads as though it described the magnetometer, when on a badge
+         * using a separate part it describes the accelerometer's transport only. */
+        if (cst.mag_source == MAG_SOURCE_BNO055) {
+            bno055_status_t bn;
+            bno055_get_status(&bn);
+            if (!bn.present) {
+                lv_label_set_text(s_val[R_CMP_SRC], "BNO055: none found");
+            } else {
+                /* The four calibration figures are the point of this row. A BNO055
+                 * reports a confident heading from power-up, and mag below 2 is why a
+                 * part that is plainly working still publishes nothing. sys_err is the
+                 * part reporting a fault about itself, so it is shown when non-zero
+                 * rather than left for the log. */
+                snprintf(b, sizeof b, "BNO055 %s  cal s%u g%u a%u m%u%s",
+                         bn.ext_crystal ? "xtal" : "int-osc",
+                         bn.calib.sys, bn.calib.gyro, bn.calib.accel, bn.calib.mag,
+                         bn.sys_err ? "  ERR" : "");
+                lv_label_set_text(s_val[R_CMP_SRC], b);
+                lv_obj_set_style_text_color(s_val[R_CMP_SRC],
+                                            theme_hex(bn.calib.mag >= 2 && !bn.sys_err
+                                                      ? C_OK : C_WARN), 0);
+            }
+        } else if (cst.mag_source == MAG_SOURCE_QMC5883L) {
+            qmc5883l_status_t q;
+            qmc5883l_get_status(&q);
+            if (!q.present) {
+                lv_label_set_text(s_val[R_CMP_SRC], "QMC5883L: none found");
+            } else {
+                /* ovl is the one to watch on this part: it means the field went off the
+                 * top of the selected range, so the counts are clipped rather than
+                 * merely noisy, and the range setting is too small. */
+                snprintf(b, sizeof b, "QMC5883L  %lu rd, %lu e, %lu ovl",
+                         (unsigned long)q.reads, (unsigned long)q.errors,
+                         (unsigned long)q.overflows);
+                lv_label_set_text(s_val[R_CMP_SRC], b);
+            }
+        } else if (cst.state == COMPASS_STATE_OFF && !cst.enabled) {
+            lv_label_set_text(s_val[R_CMP_SRC], "--");
+        } else {
+            lv_label_set_text(s_val[R_CMP_SRC], "AK09916 (in ICM-20948)");
+        }
 
-    /* --- WiFi --- */
-    char st[24]; int wr = 0; bool wrv = false;
-    wifi_get_state(st, sizeof st, &wr, &wrv);
-    if (wrv) snprintf(b, sizeof b, "%s  %d dBm", st, wr);
-    else snprintf(b, sizeof b, "%s", st);
-    lv_label_set_text(s_val[R_WIFI], b);
-    if (wifi_link_up()) { char ip[20]; wifi_ip_str(ip, sizeof ip); lv_label_set_text(s_val[R_WIFI_IP], ip); }
-    else lv_label_set_text(s_val[R_WIFI_IP], "--");
+        /* The self-test energises a coil on the AK09916's own die, so the datasheet
+         * fixes the windows. It reads the coil plus the ambient field, so it does not
+         * isolate the part from its surroundings, but it does separate the analogue
+         * front end from the digital path every other row exercises. Blank until F3 has
+         * been pressed, because a verdict left over from a different module would be
+         * worse than none, and not offered at all for a part with no self-test coil. */
+        if (cst.mag_source != MAG_SOURCE_IMU) {
+            /* A QMC5883L has no self-test coil, and a BNO055 calibrates itself
+             * continuously and reports that in the row above instead. */
+            lv_label_set_text(s_val[R_CMP_ST], "n/a for this part");
+        } else if (!cst.mag_present) {
+            lv_label_set_text(s_val[R_CMP_ST], "--");
+        } else if (!cst.selftest_done) {
+            lv_label_set_text(s_val[R_CMP_ST], "press F3");
+        } else if (!cst.selftest.ran) {
+            lv_label_set_text(s_val[R_CMP_ST], "did not run (I2C)");
+        } else {
+            /* The counts are shown either way: a FAIL that is wildly out means a dead
+             * die, and one just outside the window means a marginal part. */
+            snprintf(b, sizeof b, "%s  %d/%d  %d %d %d",
+                     cst.selftest.pass ? "PASS" : "FAIL",
+                     cst.selftest.passes, cst.selftest.runs,
+                     cst.selftest.x, cst.selftest.y, cst.selftest.z);
+            lv_label_set_text(s_val[R_CMP_ST], b);
+            lv_obj_set_style_text_color(s_val[R_CMP_ST],
+                                        theme_hex(cst.selftest.pass ? C_OK : C_CRIT), 0);
+        }
 
-    /* --- Bluetooth --- */
-    bool ben = false, bcon = false;
-    ble_status(&ben, &bcon);
-    lv_label_set_text(s_val[R_BLE], !ben ? "off" : (bcon ? "connected" : "advertising"));
+        /* --- WiFi --- */
+        char st[24]; int wr = 0; bool wrv = false;
+        wifi_get_state(st, sizeof st, &wr, &wrv);
+        if (wrv) snprintf(b, sizeof b, "%s  %d dBm", st, wr);
+        else snprintf(b, sizeof b, "%s", st);
+        lv_label_set_text(s_val[R_WIFI], b);
+        if (wifi_link_up()) { char ip[20]; wifi_ip_str(ip, sizeof ip); lv_label_set_text(s_val[R_WIFI_IP], ip); }
+        else lv_label_set_text(s_val[R_WIFI_IP], "--");
 
-    /* --- System --- */
-    battery_state_t bat;
-    if (battery_read(&bat) && bat.present)
-        snprintf(b, sizeof b, "%d%%  %.2fV%s", bat.pct, (double)bat.volts, bat.usb ? " USB" : "");
-    else
-        snprintf(b, sizeof b, "disabled");
-    lv_label_set_text(s_val[R_BATT], b);
-    uint32_t up = (uint32_t)(esp_timer_get_time() / 1000000);
-    snprintf(b, sizeof b, "%lum%02lus  %luK", (unsigned long)(up / 60),
-             (unsigned long)(up % 60), (unsigned long)(esp_get_free_heap_size() / 1024));
-    lv_label_set_text(s_val[R_SYS], b);
+        /* --- Bluetooth --- */
+        bool ben = false, bcon = false;
+        ble_status(&ben, &bcon);
+        lv_label_set_text(s_val[R_BLE], !ben ? "off" : (bcon ? "connected" : "advertising"));
+
+        /* --- System --- */
+        battery_state_t bat;
+        if (battery_read(&bat) && bat.present)
+            snprintf(b, sizeof b, "%d%%  %.2fV%s", bat.pct, (double)bat.volts, bat.usb ? " USB" : "");
+        else
+            snprintf(b, sizeof b, "disabled");
+        lv_label_set_text(s_val[R_BATT], b);
+        uint32_t up = (uint32_t)(esp_timer_get_time() / 1000000);
+        snprintf(b, sizeof b, "%lum%02lus  %luK", (unsigned long)(up / 60),
+                 (unsigned long)(up % 60), (unsigned long)(esp_get_free_heap_size() / 1024));
+        lv_label_set_text(s_val[R_SYS], b);
+    } else if (s_page == 1) {
+        /* DFS scales 80–240 MHz at runtime; show the configured ceiling. */
+        snprintf(b, sizeof b, "%lu MHz",
+                 (unsigned long)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
+        lv_label_set_text(s_val[R_CPU], b);
+
+        /* Chip temperature. */
+        if (s_tsens) {
+            float t = 0;
+            if (temperature_sensor_get_celsius(s_tsens, &t) == ESP_OK)
+                snprintf(b, sizeof b, "%.1f C", (double)t);
+            else
+                snprintf(b, sizeof b, "n/a");
+        } else {
+            snprintf(b, sizeof b, "n/a");
+        }
+        lv_label_set_text(s_val[R_TEMP], b);
+
+        /* Flash chip size. */
+        uint32_t flash_sz = 0;
+        esp_flash_get_size(NULL, &flash_sz);
+        snprintf(b, sizeof b, "%lu MB", (unsigned long)(flash_sz / (1024 * 1024)));
+        lv_label_set_text(s_val[R_FLASH], b);
+
+        /* PSRAM. */
+        snprintf(b, sizeof b, "%lu KB free / %lu KB",
+                 (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+                 (unsigned long)(heap_caps_get_total_size(MALLOC_CAP_SPIRAM) / 1024));
+        lv_label_set_text(s_val[R_PSRAM], b);
+
+        /* Internal heap. */
+        snprintf(b, sizeof b, "%lu KB free / %lu KB",
+                 (unsigned long)(esp_get_free_heap_size() / 1024),
+                 (unsigned long)(heap_caps_get_total_size(MALLOC_CAP_INTERNAL) / 1024));
+        lv_label_set_text(s_val[R_HEAP], b);
+
+        /* Uptime. */
+        uint32_t up = (uint32_t)(esp_timer_get_time() / 1000000UL);
+        snprintf(b, sizeof b, "%lud %02lu:%02lu:%02lu",
+                 (unsigned long)(up / 86400UL),
+                 (unsigned long)((up % 86400UL) / 3600UL),
+                 (unsigned long)((up % 3600UL) / 60UL),
+                 (unsigned long)(up % 60UL));
+        lv_label_set_text(s_val[R_UPTIME], b);
+  }
 }
 
 /* The motor and the LED are the two peripherals whose wiring cannot be confirmed
@@ -365,20 +473,18 @@ static void tick(void)
  * someone else. Both are no-ops when the feature is off in Settings. */
 static void on_fkey(int n)
 {
-    if (n == 1) vibe_svc_test();
-    else if (n == 2) led_svc_test();
-    /* F3 only means something for the AK09916; nothing else here has a self-test
-     * coil. The service drops the request when another part supplies the field, and
-     * the Self-test row says "n/a for this part", so the key stays unconditional
-     * rather than the menubar growing a state the label cannot show. */
-    else if (n == 3) compass_selftest_begin();
+    if (n == 1) { s_page = (s_page + PAGE_COUNT - 1) % PAGE_COUNT; show_page(); }
+    else if (n == 2) { s_page = (s_page + 1) % PAGE_COUNT; show_page(); }
+    else if (n == 3) vibe_svc_test();
+    else if (n == 4) led_svc_test();
+    /* F3/F4 on Mesh page: compass self-test moves to Radio page in task 4.5 */
 }
 
 const app_def_t *app_diag(void)
 {
     static const app_def_t def = {
         .name = "Diag", .icon = LV_SYMBOL_EYE_OPEN,
-        .build = build, .on_fkey = on_fkey, .tick = tick,
+        .build = build, .on_fkey = on_fkey, .tick = tick, .close = close_diag,
     };
     return &def;
 }
