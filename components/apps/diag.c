@@ -40,6 +40,10 @@ enum {
     R_BATT, R_SYS,
     /* System page */
     R_CPU, R_TEMP, R_FLASH, R_PSRAM, R_HEAP, R_UPTIME,
+    /* Memory page */
+    R_MEM_INT_FREE, R_MEM_INT_TOTAL, R_MEM_INT_LFB, R_MEM_INT_MIN,
+    R_MEM_PSRAM_FREE, R_MEM_PSRAM_TOTAL, R_MEM_PSRAM_LFB,
+    R_MEM_DMA,
     R_COUNT
 };
 
@@ -153,7 +157,22 @@ static void build_system_page(void)
     s_val[R_UPTIME] = make_row(f.body, "Uptime");
 }
 
-static void build_memory_page(void) { /* task 4.4 */ }
+static void build_memory_page(void)
+{
+    make_header(f.body, "INTERNAL RAM");
+    s_val[R_MEM_INT_FREE]  = make_row(f.body, "Free");
+    s_val[R_MEM_INT_TOTAL] = make_row(f.body, "Total");
+    s_val[R_MEM_INT_LFB]   = make_row(f.body, "Largest blk");
+    s_val[R_MEM_INT_MIN]   = make_row(f.body, "Min free");
+
+    make_header(f.body, "PSRAM");
+    s_val[R_MEM_PSRAM_FREE]  = make_row(f.body, "Free");
+    s_val[R_MEM_PSRAM_TOTAL] = make_row(f.body, "Total");
+    s_val[R_MEM_PSRAM_LFB]   = make_row(f.body, "Largest blk");
+
+    make_header(f.body, "DMA");
+    s_val[R_MEM_DMA] = make_row(f.body, "Free");
+}
 static void build_radio_page(void)  { /* task 4.5 */ }
 
 static void build(lv_obj_t **screen, lv_group_t *group)
@@ -464,7 +483,42 @@ static void tick(void)
                  (unsigned long)((up % 3600UL) / 60UL),
                  (unsigned long)(up % 60UL));
         lv_label_set_text(s_val[R_UPTIME], b);
-  }
+    } else if (s_page == 2) {
+        /* Internal RAM. */
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
+        lv_label_set_text(s_val[R_MEM_INT_FREE], b);
+
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_total_size(MALLOC_CAP_INTERNAL) / 1024));
+        lv_label_set_text(s_val[R_MEM_INT_TOTAL], b);
+
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024));
+        lv_label_set_text(s_val[R_MEM_INT_LFB], b);
+
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024));
+        lv_label_set_text(s_val[R_MEM_INT_MIN], b);
+
+        /* PSRAM. */
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+        lv_label_set_text(s_val[R_MEM_PSRAM_FREE], b);
+
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_total_size(MALLOC_CAP_SPIRAM) / 1024));
+        lv_label_set_text(s_val[R_MEM_PSRAM_TOTAL], b);
+
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
+        lv_label_set_text(s_val[R_MEM_PSRAM_LFB], b);
+
+        /* DMA-capable internal memory (used by display and radio). */
+        snprintf(b, sizeof b, "%lu KB",
+                 (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024));
+        lv_label_set_text(s_val[R_MEM_DMA], b);  
+    }
 }
 
 /* The motor and the LED are the two peripherals whose wiring cannot be confirmed
