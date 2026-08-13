@@ -44,6 +44,9 @@ enum {
     R_MEM_INT_FREE, R_MEM_INT_TOTAL, R_MEM_INT_LFB, R_MEM_INT_MIN,
     R_MEM_PSRAM_FREE, R_MEM_PSRAM_TOTAL, R_MEM_PSRAM_LFB,
     R_MEM_DMA,
+    /* Radio page */
+    R_RAD_FREQ, R_RAD_SF, R_RAD_BW, R_RAD_CR, R_RAD_SYNC,
+    R_RAD_PWR, R_RAD_PRE, R_RAD_RSSI, R_RAD_SNR,
     R_COUNT
 };
 
@@ -71,7 +74,7 @@ static void show_page(void)
     /* Update page indicator in menubar */
     char label[16];
     snprintf(label, sizeof label, "%d/%d", s_page + 1, PAGE_COUNT);
-    menubar_set_cell(2, label);   /* F3 cell shows current page */
+    menubar_set_cell(2, s_page == 3 ? "MagST" : "Buzz");  /* F3 action */
 }
 
 static void make_header(lv_obj_t *parent, const char *caps)
@@ -173,7 +176,21 @@ static void build_memory_page(void)
     make_header(f.body, "DMA");
     s_val[R_MEM_DMA] = make_row(f.body, "Free");
 }
-static void build_radio_page(void)  { /* task 4.5 */ }
+static void build_radio_page(void)
+{
+    make_header(f.body, "MODEM");
+    s_val[R_RAD_FREQ] = make_row(f.body, "Frequency");
+    s_val[R_RAD_SF]   = make_row(f.body, "SF");
+    s_val[R_RAD_BW]   = make_row(f.body, "Bandwith");
+    s_val[R_RAD_CR]   = make_row(f.body, "Coding rate");
+    s_val[R_RAD_SYNC] = make_row(f.body, "Sync word");
+    s_val[R_RAD_PWR]  = make_row(f.body, "TX power");
+    s_val[R_RAD_PRE]  = make_row(f.body, "Preamble");
+
+    make_header(f.body, "SIGNAL");
+    s_val[R_RAD_RSSI] = make_row(f.body, "Last RSSI");
+    s_val[R_RAD_SNR]  = make_row(f.body, "Last SNR");
+}
 
 static void build(lv_obj_t **screen, lv_group_t *group)
 {
@@ -183,8 +200,8 @@ static void build(lv_obj_t **screen, lv_group_t *group)
     ui_scroll_focusable(f.body, group);
 
     *screen = f.screen;
+    menubar_set_labels("Prev", "Next", "", "LED", "");  /* F3 set by show_page */
     show_page();
-    menubar_set_labels("Prev", "Next", "Buzz", "LED", "");
 }
 
 static void close_diag(void)
@@ -518,6 +535,38 @@ static void tick(void)
         snprintf(b, sizeof b, "%lu KB",
                  (unsigned long)(heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024));
         lv_label_set_text(s_val[R_MEM_DMA], b);  
+    } else if (s_page == 3) {
+        net_radio_cfg_t rc;
+        net_radio_cfg(&rc);
+
+        snprintf(b, sizeof b, "%.3f MHz", rc.freq_mhz);
+        lv_label_set_text(s_val[R_RAD_FREQ], b);
+
+        snprintf(b, sizeof b, "SF%d", rc.sf);
+        lv_label_set_text(s_val[R_RAD_SF], b);
+
+        snprintf(b, sizeof b, "%.0f kHz", rc.bw_khz);
+        lv_label_set_text(s_val[R_RAD_BW], b);
+
+        snprintf(b, sizeof b, "4/%d", rc.cr);
+        lv_label_set_text(s_val[R_RAD_CR], b);
+
+        snprintf(b, sizeof b, "0x%02X", rc.sync_word);
+        lv_label_set_text(s_val[R_RAD_SYNC], b);
+
+        snprintf(b, sizeof b, "%d dBm", rc.power_dbm);
+        lv_label_set_text(s_val[R_RAD_PWR], b);
+
+        snprintf(b, sizeof b, "%d symbols", rc.preamble);
+        lv_label_set_text(s_val[R_RAD_PRE], b);
+
+        net_diag_t d;
+        net_diag(&d);
+        snprintf(b, sizeof b, "%.0f dBm", (double)d.last_rssi);
+        lv_label_set_text(s_val[R_RAD_RSSI], b);
+
+        snprintf(b, sizeof b, "%.1f dB", (double)d.last_snr);
+        lv_label_set_text(s_val[R_RAD_SNR], b);
     }
 }
 
@@ -529,9 +578,12 @@ static void on_fkey(int n)
 {
     if (n == 1) { s_page = (s_page + PAGE_COUNT - 1) % PAGE_COUNT; show_page(); }
     else if (n == 2) { s_page = (s_page + 1) % PAGE_COUNT; show_page(); }
-    else if (n == 3) vibe_svc_test();
+    else if (n == 3) {
+        if (s_page == 3) compass_selftest_begin();
+        else             vibe_svc_test();
+    }
     else if (n == 4) led_svc_test();
-    /* F3/F4 on Mesh page: compass self-test moves to Radio page in task 4.5 */
+    /* F3: MagST on Radio page, Buzz on all others */
 }
 
 const app_def_t *app_diag(void)
