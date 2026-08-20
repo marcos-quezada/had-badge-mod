@@ -33,6 +33,7 @@
 #include "ble/ble.h"
 #include "apps/app_manager.h"
 #include "apps/app_iface.h"
+#include "apps/screensaver.h"
 
 static const char *TAG = "main";
 
@@ -103,6 +104,7 @@ void app_main(void)
     settings_app_init(&s_settings);
     app_manager_init(&s_bus);
     status_svc_init(&s_settings);
+    screensaver_init(&s_settings);
 
     /* 7. Power policy (DFS + backlight dim/off, configurable in Settings). */
     power_start_backlight_policy(&s_settings);

@@ -3,6 +3,7 @@
 #include "apps/app_manager.h"
 #include "apps/app_iface.h"
 #include "apps/launcher.h"
+#include "apps/screensaver.h"
 #include "ui/menubar.h"
 #include "ui/theme.h"
 #include "ui/colors.h"
@@ -150,6 +151,8 @@ void app_manager_screensaver_enter(void)
     lv_obj_set_style_bg_color(s_screensaver_scr, theme_hex(C_SURFACE), 0);
     lv_obj_set_style_bg_opa(s_screensaver_scr, LV_OPA_COVER, 0);
     lv_screen_load(s_screensaver_scr);
+
+    screensaver_build(s_screensaver_scr);
 }
 
 void app_manager_screensaver_exit(void)
@@ -161,6 +164,7 @@ void app_manager_screensaver_exit(void)
         s_screensaver_scr = NULL;
     }
     app_manager_go_home();
+    screensaver_destroy();
 }
 
 static void go_back(void)
@@ -220,6 +224,8 @@ static void manager_tick(lv_timer_t *t)
         (uint32_t)(lv_tick_get() - s_bar_since) >= s_bar_delay)
         bar_hide();
     if (s_current >= 0 && s_apps[s_current]->tick) s_apps[s_current]->tick();
+
+    if (s_screensaver_active) screensaver_tick();
 }
 
 void app_manager_init(eventbus_t *bus)
