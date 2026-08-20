@@ -14,5 +14,9 @@ void app_manager_start(void);   /* create + run the UI task */
 void app_manager_launch(int index);
 void app_manager_launch_app(const app_def_t *def);   /* by definition pointer */
 void app_manager_go_home(void);
+void app_manager_screensaver_enter(void);
+void app_manager_screensaver_exit(void);
+void app_manager_screensaver_request(void);
+void app_manager_screensaver_cancel(void);
 
 #endif /* APPS_APP_MANAGER_H */

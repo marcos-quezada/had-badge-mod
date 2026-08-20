@@ -36,6 +36,7 @@ static int s_save_throttle;     /* bg-tick counter to debounce NVS writes */
 static uint32_t s_target = 0xFFFFFFFFu;   /* recipient (broadcast by default) */
 static int s_view_chan = 0;               /* channel shown in the chat (= TX channel) */
 static lv_obj_t *s_to;                    /* "To: ..." label */
+static int s_unread;
 
 void messages_set_target(uint32_t node) { s_target = node; }
 
@@ -187,6 +188,7 @@ static void msg_bg_tick(lv_timer_t *t)
         if (s_active && m.channel == (uint8_t)s_view_chan) {
             add_bubble(&m);
         } else if (!m.outgoing) {
+            if (!s_active) s_unread++;
             got_rx = true;
             const char *who = m.long_name[0] ? m.long_name : (m.short_name[0] ? m.short_name : "node");
             snprintf(toast, sizeof toast, "%s: %s", who, m.text);
@@ -413,6 +415,7 @@ static void build(lv_obj_t **screen, lv_group_t *group)
     update_to();
     if (s_toast) lv_obj_delete(s_toast);   /* chat is on screen; toast is noise */
     s_active = true;
+    s_unread = 0;
 }
 
 static void on_fkey(int n)
@@ -451,3 +454,5 @@ const app_def_t *app_messages(void)
     };
     return &def;
 }
+
+bool messages_has_unread(void) { return s_unread > 0; }

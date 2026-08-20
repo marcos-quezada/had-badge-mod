@@ -14,4 +14,8 @@ void power_register_settings(settings_t *reg);
  * changes apply without a reboot. */
 void power_start_backlight_policy(settings_t *reg);
 
+typedef void (*power_screensaver_fn_t)(void);
+void power_set_screensaver_callbacks(power_screensaver_fn_t enter,
+                                     power_screensaver_fn_t cancel);
+
 #endif /* DRIVERS_POWER_MGMT_H */

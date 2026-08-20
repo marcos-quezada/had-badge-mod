@@ -57,4 +57,6 @@ void radar_init(settings_t *reg);
 /* Give the settings app access to the registry (call once at boot). */
 void settings_app_init(settings_t *reg);
 
+bool messages_has_unread(void);
+
 #endif /* APPS_APP_IFACE_H */

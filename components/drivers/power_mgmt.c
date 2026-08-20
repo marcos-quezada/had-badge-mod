@@ -12,6 +12,15 @@
 #include "freertos/task.h"
 
 static const char *TAG = "power";
+static power_screensaver_fn_t s_ss_enter;
+static power_screensaver_fn_t s_ss_cancel;
+
+void power_set_screensaver_callbacks(power_screensaver_fn_t enter,
+                                     power_screensaver_fn_t cancel)
+{
+    s_ss_enter  = enter;
+    s_ss_cancel = cancel;
+}
 
 void power_init(void)
 {
@@ -43,6 +52,14 @@ static const setting_t BL_SCHEMA[] = {
      .group = "Power", .minv = 10, .maxv = 1023, .has_min = true, .has_max = true},
     {.key = "bl_dim", .type = SET_INT, .def = "120", .label = "Dim level",
      .group = "Power", .minv = 0, .maxv = 1023, .has_min = true, .has_max = true},
+    /* Screensaver */
+    {.key = "screensaver_s", .type = SET_INT, .def = "30",
+     .label = "Screensaver after (s, 0=off)",
+     .group = "Power", .minv = 0, .maxv = 3600, .has_min = true, .has_max = true},
+    {.key = "screensaver", .type = SET_ENUM, .def = "off",
+     .label = "Screensaver", .group = "Power",
+     .choices = (const char *[]){"off", "fish", "starfield", "dvd", "matrix"},
+     .nchoices = 5},
 };
 
 void power_register_settings(settings_t *reg)
@@ -56,22 +73,39 @@ static void backlight_task(void *arg)
     (void)arg;
     uint32_t last = keyboard_activity_count();
     int idle = 0;
-    int stage = 0; /* 0 bright, 1 dim, 2 off */
+    int stage = 0; /* 0=bright, 1=screensaver, 2=dim, 3=off */
     backlight_set(bl_cfg("bl_bright", 700));
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        int bright = bl_cfg("bl_bright", 700), dim = bl_cfg("bl_dim", 120);
-        int dim_to = bl_cfg("bl_dim_s", 60), off_to = bl_cfg("bl_off_s", 0);
+        int bright = bl_cfg("bl_bright", 700);
+        int dim    = bl_cfg("bl_dim", 120);
+        int ss_to  = bl_cfg("screensaver_s", 30);
+        int dim_to = bl_cfg("bl_dim_s", 60);
+        int off_to = bl_cfg("bl_off_s", 0);
+
         uint32_t now = keyboard_activity_count();
         if (now != last) {
             last = now;
             idle = 0;
-            if (stage != 0) { backlight_set(bright); stage = 0; }
+            if (stage != 0) {
+                backlight_set(bright);
+                stage = 0;
+                if (s_ss_cancel) s_ss_cancel();
+            }
             continue;
         }
         idle++;
-        if (stage == 0 && dim_to > 0 && idle >= dim_to) { backlight_set(dim); stage = 1; }
-        else if (stage == 1 && off_to > 0 && idle >= off_to) { backlight_set(0); stage = 2; }
+
+        if (stage == 0 && ss_to > 0 && idle >= ss_to) {
+            if (s_ss_enter) s_ss_enter();
+            stage = 1;
+        } else if (stage == 1 && dim_to > 0 && idle >= ss_to + dim_to) {
+            backlight_set(dim);
+            stage = 2;
+        } else if (stage == 2 && off_to > 0 && idle >= ss_to + dim_to + off_to) {
+            backlight_set(0);
+            stage = 3;
+        }
     }
 }
 
