@@ -23,11 +23,11 @@ typedef struct {
     lv_obj_t *label;
     int x, y;
     bool active;
+    bool notify;    /* true = envelope bubble for unread notification */
 } bubble_t;
 
 static settings_t *s_reg;
 static lv_obj_t   *s_parent;
-static lv_obj_t   *s_unread_label;    /* envelope bubble, NULL when hidden */
 static fish_t      s_fish[FISH_COUNT];
 static bubble_t    s_bubbles[BUBBLE_MAX];
 static int         s_tick;
@@ -69,8 +69,8 @@ static void build_fish(void)
     lv_obj_set_size(bg, SCREEN_W, SCREEN_H);
     lv_obj_set_pos(bg, 0, 0);
     lv_obj_set_style_border_width(bg, 0, 0);
-    lv_obj_set_style_bg_color(bg, theme_tint(60), 0);
-    lv_obj_set_style_bg_grad_color(bg, theme_tint(15), 0);
+    lv_obj_set_style_bg_color(bg, theme_tint(120), 0);
+    lv_obj_set_style_bg_grad_color(bg, theme_tint(30), 0);
     lv_obj_set_style_bg_grad_dir(bg, LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_bg_opa(bg, LV_OPA_COVER, 0);
     lv_obj_remove_flag(bg, LV_OBJ_FLAG_SCROLLABLE);
@@ -99,7 +99,6 @@ static void build_fish(void)
         s_bubbles[i].active = false;
     }
 
-    s_unread_label = NULL;
     s_tick = 0;
 }
 
@@ -117,6 +116,12 @@ static void tick_fish(void)
                 s_bubbles[i].x = rnd_range(10, SCREEN_W - 10);
                 s_bubbles[i].y = SCREEN_H - GROUND_H - 4;
                 s_bubbles[i].active = true;
+                s_bubbles[i].notify = messages_has_unread();
+                lv_label_set_text(s_bubbles[i].label,
+                                  s_bubbles[i].notify ? LV_SYMBOL_ENVELOPE : "o");
+                lv_obj_set_style_text_color(s_bubbles[i].label,
+                                  s_bubbles[i].notify ? theme_hex(C_ACCENT)
+                                                      : theme_hex(C_TEXT), 0);
                 lv_obj_set_pos(s_bubbles[i].label, s_bubbles[i].x, s_bubbles[i].y);
                 lv_obj_remove_flag(s_bubbles[i].label, LV_OBJ_FLAG_HIDDEN);
                 break;
@@ -134,22 +139,6 @@ static void tick_fish(void)
         } else {
             lv_obj_set_pos(s_bubbles[i].label, s_bubbles[i].x, s_bubbles[i].y);
         }
-    }
-
-    /* Unread message notification: show envelope on first fish. */
-    if (messages_has_unread() && !s_unread_label) {
-        s_unread_label = lv_label_create(s_parent);
-        lv_label_set_text(s_unread_label, "[\u2709]");
-        lv_obj_set_style_text_color(s_unread_label, theme_hex(C_TEXT), 0);
-    } else if (!messages_has_unread() && s_unread_label) {
-        lv_obj_delete(s_unread_label);
-        s_unread_label = NULL;
-    }
-    if (s_unread_label) {
-        /* Float the bubble above fish 0. */
-        lv_obj_set_pos(s_unread_label,
-                       s_fish[0].x,
-                       s_fish[0].y - 16);
     }
 }
 
@@ -178,8 +167,14 @@ void screensaver_destroy(void)
     /* LVGL deletes all children when the parent screen is deleted by
      * app_manager_screensaver_exit(); nothing to free here explicitly. */
     s_parent       = NULL;
-    s_unread_label = NULL;
     for (int i = 0; i < BUBBLE_MAX; i++) s_bubbles[i].active = false;
     for (int i = 0; i < FISH_COUNT; i++) s_fish[i].label = NULL;
     s_tick = 0;
+}
+
+bool screensaver_enabled(void)
+{
+    char choice[16] = "off";
+    if (s_reg) settings_get_str(s_reg, "screensaver", choice, sizeof choice);
+    return strcmp(choice, "off") != 0;
 }

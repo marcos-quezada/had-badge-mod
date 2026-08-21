@@ -9,5 +9,6 @@ void screensaver_init(settings_t *reg);
 void screensaver_build(lv_obj_t *parent);
 void screensaver_tick(void);
 void screensaver_destroy(void);
+bool screensaver_enabled(void);
 
 #endif /* APPS_SCREENSAVER_H */

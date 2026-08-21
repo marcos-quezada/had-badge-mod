@@ -80,3 +80,10 @@ void sidebar_update(const status_snapshot_t *s)
     /* Tracking: red dot when recording, dim otherwise. */
     lv_obj_set_style_bg_color(s_track, theme_hex(s->tracking ? C_CRIT : C_IDLE), 0);
 }
+
+void sidebar_set_visible(bool visible)
+{
+    if (!s_bar) return;
+    if (visible) lv_obj_remove_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+    else         lv_obj_add_flag(s_bar, LV_OBJ_FLAG_HIDDEN);
+}

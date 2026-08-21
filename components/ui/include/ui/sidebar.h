@@ -7,5 +7,6 @@
 
 void sidebar_init(void);
 void sidebar_update(const status_snapshot_t *s);
+void sidebar_set_visible(bool visible);
 
 #endif /* UI_SIDEBAR_H */

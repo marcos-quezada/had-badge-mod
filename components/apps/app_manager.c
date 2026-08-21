@@ -7,6 +7,7 @@
 #include "ui/menubar.h"
 #include "ui/theme.h"
 #include "ui/colors.h"
+#include "ui/sidebar.h"
 #include "drivers/keyboard.h"
 #include "drivers/power_mgmt.h"
 
@@ -143,15 +144,29 @@ void app_manager_launch_app(const app_def_t *def)
 
 void app_manager_screensaver_enter(void)
 {
-    if (s_screensaver_active) return;
+    if (!screensaver_enabled()) return;
+    /* Any key dismissed the screensaver. */
+    static uint32_t s_ss_last_activity;
+    if (s_screensaver_active) {
+        uint32_t act = keyboard_activity_count();
+        if (act != s_ss_last_activity) {
+            s_ss_last_activity = act;
+            app_manager_screensaver_exit();
+        } else {
+            screensaver_tick();
+        }
+        return;
+    }
+    s_ss_last_activity = keyboard_activity_count();
     s_screensaver_active = true;
     /* Build screensaver screen and load it; existing screen stays intact
      * underneath until we restore. */
     s_screensaver_scr = lv_obj_create(NULL);  /* bare screen */
     lv_obj_set_style_bg_color(s_screensaver_scr, theme_hex(C_SURFACE), 0);
     lv_obj_set_style_bg_opa(s_screensaver_scr, LV_OPA_COVER, 0);
+    sidebar_set_visible(false);
+    menubar_set_visible(false, false);
     lv_screen_load(s_screensaver_scr);
-
     screensaver_build(s_screensaver_scr);
 }
 
@@ -159,12 +174,14 @@ void app_manager_screensaver_exit(void)
 {
     if (!s_screensaver_active) return;
     s_screensaver_active = false;
+    screensaver_destroy();
     if (s_screensaver_scr) {
         lv_obj_delete(s_screensaver_scr);
         s_screensaver_scr = NULL;
     }
     app_manager_go_home();
-    screensaver_destroy();
+    sidebar_set_visible(true);
+    menubar_set_visible(true, false);
 }
 
 static void go_back(void)
@@ -189,13 +206,19 @@ static void manager_tick(lv_timer_t *t)
         app_manager_screensaver_enter();
     }
 
-    /* Any key dismisses the screensaver */
+    /* Any key dismisses the screensaver. */
+    static uint32_t s_ss_last_activity;
     if (s_screensaver_active) {
-        bool any = esc;
-        for (int n = 0; n < 5; n++) any |= fk[n];
-        if (any) app_manager_screensaver_exit();
-        return;   /* consume the key - don't pass it to any app */ 
+        uint32_t act = keyboard_activity_count();
+        if (act != s_ss_last_activity) {
+            s_ss_last_activity = act;
+            app_manager_screensaver_exit();
+        } else {
+            screensaver_tick();
+        }
+        return;
     }
+    s_ss_last_activity = keyboard_activity_count();
 
     if ((esc || fk[4]) && s_current >= 0) {
         /* Esc and F5/Back are literally the same action: always one press,
@@ -224,8 +247,6 @@ static void manager_tick(lv_timer_t *t)
         (uint32_t)(lv_tick_get() - s_bar_since) >= s_bar_delay)
         bar_hide();
     if (s_current >= 0 && s_apps[s_current]->tick) s_apps[s_current]->tick();
-
-    if (s_screensaver_active) screensaver_tick();
 }
 
 void app_manager_init(eventbus_t *bus)
