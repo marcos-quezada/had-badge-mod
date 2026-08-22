@@ -190,7 +190,7 @@ static void build_starfield(void)
     s_star_pulse  = 0;
 }
 
-static void tick_starfield(void) 
+static void tick_starfield(void)
 {
     for (int i = 0; i < STAR_COUNT; i++) {
         s_stars[i].x -= s_stars[i].speed;
@@ -223,6 +223,7 @@ static void tick_starfield(void)
 /* ---- DVD --------------------------------------------------------- */
 static lv_obj_t *s_dvd_label;
 static int       s_dvd_x, s_dvd_y, s_dvd_dx, s_dvd_dy;
+static bool      s_dvd_notify_shown;
 
 static void build_dvd(void)
 {
@@ -233,18 +234,32 @@ static void build_dvd(void)
     lv_label_set_text(s_dvd_label, "DVD");
     lv_obj_set_style_text_color(s_dvd_label, theme_tint(255), 0);
 
-    s_dvd_x  = rnd_range(20, SCREEN_W - 60);
-    s_dvd_y  = rnd_range(10, SCREEN_H - 30);
-    s_dvd_dx = rnd_range(0, 1) ? 2 : -2;
-    s_dvd_dy = rnd_range(0, 1) ? 1 : -1;
+    s_dvd_x            = rnd_range(20, SCREEN_W - 60);
+    s_dvd_y            = rnd_range(10, SCREEN_H - 30);
+    s_dvd_dx           = rnd_range(0, 1) ? 2 : -2;
+    s_dvd_dy           = rnd_range(0, 1) ? 1 : -1;
+    s_dvd_notify_shown = false;
     lv_obj_set_pos(s_dvd_label, s_dvd_x, s_dvd_y);
 }
 
 static void tick_dvd(void)
 {
+    /* Unread signal: text and color change. */
+    bool unread = messages_has_unread();
+    if (unread != s_dvd_notify_shown) {
+        s_dvd_notify_shown = unread;
+        if (unread) {
+            lv_label_set_text(s_dvd_label, LV_SYMBOL_ENVELOPE " MSG");
+            lv_obj_set_style_text_color(s_dvd_label, theme_hex(C_TEXT), 0);
+        } else {
+            lv_label_set_text(s_dvd_label, "DVD");
+            lv_obj_set_style_text_color(s_dvd_label, theme_tint(255), 0);
+        }
+        return;
+    }
+
     s_dvd_x += s_dvd_dx;
     s_dvd_y += s_dvd_dy;
-
     int w = lv_obj_get_width(s_dvd_label);
     int h = lv_obj_get_height(s_dvd_label);
 
@@ -254,17 +269,10 @@ static void tick_dvd(void)
     /* Clamp after bounce to avoid getting stuck at edge. */
     if (s_dvd_x < 0)             s_dvd_x = 0;
     if (s_dvd_y < 0)             s_dvd_y = 0;
-    if (s_dvd_x + w > SCREEN_W)  s_dvd_x = SCREEN_W -w;
-    if (s_dvd_y + h > SCREEN_H)  s_dvd_y = SCREEN_H -h;
+    if (s_dvd_x + w > SCREEN_W)  s_dvd_x = SCREEN_W - w;
+    if (s_dvd_y + h > SCREEN_H)  s_dvd_y = SCREEN_H - h;
 
-    /* Unread signal: text and color change. */
-    if (messages_has_unread()) {
-        lv_label_set_text(s_dvd_label, LV_SYMBOL_ENVELOPE " MSG");
-        lv_obj_set_style_text_color(s_dvd_label, theme_hex(C_TEXT), 0);
-    } else {
-        lv_label_set_text(s_dvd_label, "DVD");
-        lv_obj_set_pos(s_dvd_label, s_dvd_x, s_dvd_y);
-    }
+    lv_obj_set_pos(s_dvd_label, s_dvd_x, s_dvd_y);
 }
 
 /* ---- MATRIX ------------------------------------------------------ */
@@ -323,6 +331,7 @@ void screensaver_destroy(void)
         break;
     case SS_DVD:
         s_dvd_label = NULL;
+        s_dvd_notify_shown = false;
         break;
     default:
         break;
