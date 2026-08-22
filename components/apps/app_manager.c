@@ -162,6 +162,8 @@ void app_manager_screensaver_enter(void)
     /* Build screensaver screen and load it; existing screen stays intact
      * underneath until we restore. */
     s_screensaver_scr = lv_obj_create(NULL);  /* bare screen */
+    lv_obj_remove_flag(s_screensaver_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(s_screensaver_scr, LV_DIR_NONE);
     lv_obj_set_style_bg_color(s_screensaver_scr, theme_hex(C_SURFACE), 0);
     lv_obj_set_style_bg_opa(s_screensaver_scr, LV_OPA_COVER, 0);
     sidebar_set_visible(false);

@@ -221,7 +221,51 @@ static void tick_starfield(void)
 }
 
 /* ---- DVD --------------------------------------------------------- */
-/* (task 5.6) */
+static lv_obj_t *s_dvd_label;
+static int       s_dvd_x, s_dvd_y, s_dvd_dx, s_dvd_dy;
+
+static void build_dvd(void)
+{
+    lv_obj_set_style_bg_color(s_parent, theme_hex(C_SURFACE), 0);
+    lv_obj_set_style_bg_opa(s_parent, LV_OPA_COVER, 0);
+
+    s_dvd_label = lv_label_create(s_parent);
+    lv_label_set_text(s_dvd_label, "DVD");
+    lv_obj_set_style_text_color(s_dvd_label, theme_tint(255), 0);
+
+    s_dvd_x  = rnd_range(20, SCREEN_W - 60);
+    s_dvd_y  = rnd_range(10, SCREEN_H - 30);
+    s_dvd_dx = rnd_range(0, 1) ? 2 : -2;
+    s_dvd_dy = rnd_range(0, 1) ? 1 : -1;
+    lv_obj_set_pos(s_dvd_label, s_dvd_x, s_dvd_y);
+}
+
+static void tick_dvd(void)
+{
+    s_dvd_x += s_dvd_dx;
+    s_dvd_y += s_dvd_dy;
+
+    int w = lv_obj_get_width(s_dvd_label);
+    int h = lv_obj_get_height(s_dvd_label);
+
+    if (s_dvd_x <= 0 || s_dvd_x + w >= SCREEN_W) s_dvd_dx = -s_dvd_dx;
+    if (s_dvd_y <= 0 || s_dvd_y + h >= SCREEN_H) s_dvd_dy = -s_dvd_dy;
+
+    /* Clamp after bounce to avoid getting stuck at edge. */
+    if (s_dvd_x < 0)             s_dvd_x = 0;
+    if (s_dvd_y < 0)             s_dvd_y = 0;
+    if (s_dvd_x + w > SCREEN_W)  s_dvd_x = SCREEN_W -w;
+    if (s_dvd_y + h > SCREEN_H)  s_dvd_y = SCREEN_H -h;
+
+    /* Unread signal: text and color change. */
+    if (messages_has_unread()) {
+        lv_label_set_text(s_dvd_label, LV_SYMBOL_ENVELOPE " MSG");
+        lv_obj_set_style_text_color(s_dvd_label, theme_hex(C_TEXT), 0);
+    } else {
+        lv_label_set_text(s_dvd_label, "DVD");
+        lv_obj_set_pos(s_dvd_label, s_dvd_x, s_dvd_y);
+    }
+}
 
 /* ---- MATRIX ------------------------------------------------------ */
 /* (task 5.7) */
@@ -244,6 +288,7 @@ void screensaver_build(lv_obj_t *parent)
     switch (s_type) {
     case SS_FISH:       build_fish();       break;
     case SS_STARFIELD:  build_starfield();  break;
+    case SS_DVD:        build_dvd();        break;
     default:                                break;
     }
 }
@@ -254,6 +299,7 @@ void screensaver_tick(void)
     switch (s_type) {
     case SS_FISH:       tick_fish();      break;
     case SS_STARFIELD:  tick_starfield(); break;
+    case SS_DVD:        tick_dvd();       break;
     default:                              break;
     }
 }
@@ -274,6 +320,9 @@ void screensaver_destroy(void)
         s_star_notify = NULL;
         s_star_pulse  = 0;
         for (int i = 0; i < STAR_COUNT; i++) s_stars[i].label = NULL;
+        break;
+    case SS_DVD:
+        s_dvd_label = NULL;
         break;
     default:
         break;
