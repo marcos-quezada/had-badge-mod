@@ -32,11 +32,13 @@ void launcher_build(lv_obj_t **screen, lv_group_t *group,
     static frame_t f;
     frame_create(&f, "Communicator");
 
-    /* Firmware version, small + muted + left-aligned in the top bar. */
+    /* Firmware version, small + muted + left-aligned in the top bar.
+     * Sourced from ESP-IDF's own git-derived app descriptor (populated at
+     * build time via `git describe --tags`), not a manually-maintained
+     * constant -- this can never go stale the way a hardcoded string can. */
     lv_obj_t *ver = lv_label_create(f.header);
-    char vb[40];
-    snprintf(vb, sizeof vb, "v%s", FW_VERSION);
-    lv_label_set_text(ver, vb);
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    lv_label_set_text(ver, app_desc->version);
     lv_obj_align(ver, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_text_color(ver, theme_hex(C_TEXT_DIM), 0);
     lv_obj_set_style_text_font(ver, theme_font_body(), 0);

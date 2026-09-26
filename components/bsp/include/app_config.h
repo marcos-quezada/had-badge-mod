@@ -3,7 +3,10 @@
 #define APP_CONFIG_H
 
 #define FW_NAME     "Communicator-C"
-#define FW_VERSION  "1.0.0"     /* shown with the git commit on the home screen */
+/* Version is no longer a hardcoded constant here -- it comes from
+ * ESP-IDF's own git-derived app descriptor (esp_app_get_description(),
+ * populated at build time via `git describe --tags`), so it can never go
+ * stale. See components/apps/launcher.c and main/app_main.c. */
 
 /* LoRa / Meshtastic defaults (overridable at runtime via settings/NVS). */
 #define DEFAULT_REGION        "EU_868"

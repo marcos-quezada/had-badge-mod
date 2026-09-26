@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "nvs_flash.h"
+#include "esp_app_desc.h"
 
 #include "app_config.h"
 #include "board_pins.h"
@@ -57,7 +58,8 @@ void app_main(void)
         nvs_flash_init();
     }
     uint32_t node = derive_node_id();
-    ESP_LOGI(TAG, "%s %s  node !%08lx", FW_NAME, FW_VERSION, (unsigned long)node);
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    ESP_LOGI(TAG, "%s %s  node !%08lx", FW_NAME, app_desc->version, (unsigned long)node);
 
     eventbus_init(&s_bus);
     settings_init(&s_settings, settings_nvs_create("settings"));
