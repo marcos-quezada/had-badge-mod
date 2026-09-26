@@ -122,15 +122,15 @@ static void tick_fish(void)
     if (s_tick % 20 == 0) {
         for (int i = 0; i < BUBBLE_MAX; i++) {
             if (!s_bubbles[i].active) {
+                bool        notify = messages_has_unread();
+                const char *text   = notify ? LV_SYMBOL_ENVELOPE : "o";
+                lv_color_t  color  = notify ? theme_hex(C_ACCENT) : theme_hex(C_TEXT);
                 s_bubbles[i].x = rnd_range(10, SCREEN_W - 10);
                 s_bubbles[i].y = SCREEN_H - GROUND_H - 4;
                 s_bubbles[i].active = true;
-                s_bubbles[i].notify = messages_has_unread();
-                lv_label_set_text(s_bubbles[i].label,
-                                  s_bubbles[i].notify ? LV_SYMBOL_ENVELOPE : "o");
-                lv_obj_set_style_text_color(s_bubbles[i].label,
-                                  s_bubbles[i].notify ? theme_hex(C_ACCENT)
-                                                      : theme_hex(C_TEXT), 0);
+                s_bubbles[i].notify = notify;
+                lv_label_set_text(s_bubbles[i].label, text);
+                lv_obj_set_style_text_color(s_bubbles[i].label, color, 0);
                 lv_obj_set_pos(s_bubbles[i].label, s_bubbles[i].x, s_bubbles[i].y);
                 lv_obj_remove_flag(s_bubbles[i].label, LV_OBJ_FLAG_HIDDEN);
                 break;
@@ -276,7 +276,74 @@ static void tick_dvd(void)
 }
 
 /* ---- MATRIX ------------------------------------------------------ */
-/* (task 5.7) */
+#define MAT_COLS    18
+#define MAT_TRAIL    6    /* characters per column trail */
+
+typedef struct {
+    lv_obj_t *labels[MAT_TRAIL];
+    int x, y, speed;
+    bool notify;    /* true = this column shows envelope characters */
+} mat_col_t;
+
+static mat_col_t s_mat[MAT_COLS];
+
+static void mat_col_reset(mat_col_t *c, bool randomise_y)
+{
+    c->x      = rnd_range(0, SCREEN_W - 14);
+    c->y      = randomise_y ? rnd_range(-MAT_TRAIL * 16, 0) : -MAT_TRAIL * 16;
+    c->speed  = rnd_range(2, 4);
+    c->notify = false;
+}
+
+static void build_matrix(void)
+{
+    lv_obj_set_style_bg_color(s_parent, theme_hex(C_SURFACE), 0);
+    lv_obj_set_style_bg_opa(s_parent, LV_OPA_COVER, 0);
+
+    for (int i = 0; i < MAT_COLS; i++) {
+        for (int j = 0; j < MAT_TRAIL; j++) {
+            s_mat[i].labels[j] = lv_label_create(s_parent);
+            lv_label_set_text(s_mat[i].labels[j], " ");
+            lv_obj_add_flag(s_mat[i].labels[j], LV_OBJ_FLAG_HIDDEN);
+        }
+        mat_col_reset(&s_mat[i], true);
+    }
+}
+
+static void tick_matrix(void)
+{
+    bool unread = messages_has_unread();
+
+    for (int i = 0; i < MAT_COLS; i++) {
+        s_mat[i].y += s_mat[i].speed;
+
+        /* Respawn column when fully off bottom; assign notify if unread. */
+        if (s_mat[i].y > SCREEN_H + MAT_TRAIL * 16) {
+            mat_col_reset(&s_mat[i], false);
+            s_mat[i].notify = unread;
+        }
+
+        /* Draw trail: head brightest, tail fades toward surface. */
+        for (int j = 0; j < MAT_TRAIL; j++) {
+            int char_y = s_mat[i].y - j * 16;
+            if (char_y < -16 || char_y > SCREEN_H) {
+                lv_obj_add_flag(s_mat[i].labels[j], LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+            lv_obj_remove_flag(s_mat[i].labels[j], LV_OBJ_FLAG_HIDDEN);
+
+            char        ch[2] = {(char)(rnd_range(33, 126)), 0};
+            const char *text  = s_mat[i].notify ? LV_SYMBOL_ENVELOPE : ch;
+            lv_color_t  color = (j == 0)
+                                ? theme_hex(C_TEXT)
+                                : theme_tint(255 - j * (255 / MAT_TRAIL));
+
+            lv_label_set_text(s_mat[i].labels[j], text);
+            lv_obj_set_style_text_color(s_mat[i].labels[j], color, 0);
+            lv_obj_set_pos(s_mat[i].labels[j], s_mat[i].x, char_y);
+        }
+    }
+}
 
 /* ---- PUBLIC API -------------------------------------------------- */
 void screensaver_init(settings_t *reg) { s_reg = reg; }
@@ -297,6 +364,7 @@ void screensaver_build(lv_obj_t *parent)
     case SS_FISH:       build_fish();       break;
     case SS_STARFIELD:  build_starfield();  break;
     case SS_DVD:        build_dvd();        break;
+    case SS_MATRIX:     build_matrix();     break;
     default:                                break;
     }
 }
@@ -308,6 +376,7 @@ void screensaver_tick(void)
     case SS_FISH:       tick_fish();      break;
     case SS_STARFIELD:  tick_starfield(); break;
     case SS_DVD:        tick_dvd();       break;
+    case SS_MATRIX:     tick_matrix();    break;
     default:                              break;
     }
 }
@@ -332,6 +401,11 @@ void screensaver_destroy(void)
     case SS_DVD:
         s_dvd_label = NULL;
         s_dvd_notify_shown = false;
+        break;
+    case SS_MATRIX:
+        for (int i = 0; i < MAT_COLS; i++)
+            for (int j = 0; j < MAT_TRAIL; j++)
+                s_mat[i].labels[j] = NULL;
         break;
     default:
         break;
